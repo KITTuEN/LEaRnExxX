@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+
+{% block title %}Custom Quiz Exam - Learnex{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-6 col-md-8">
+            <div class="text-center mb-5">
+                <h1 class="display-5 fw-bold text-white">Exam Portal</h1>
+                <p class="lead text-muted">Enter your exam code to start a proctored session.</p>
+            </div>
+
+            <!-- Warning Card -->
+            <div class="alert alert-warning d-flex align-items-start mb-4" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-3 mt-1 fs-4"></i>
+                <div>
+                    <strong>Exam Rules:</strong>
+                    <ul class="mb-0 ps-3 small">
+                        <li>Do not switch tabs or minimize the window.</li>
+                        <li>The exam will auto-submit if you leave the screen.</li>
+                        <li>Fullscreen mode is recommended.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Code Entry Card -->
+            <div id="code-card" class="card shadow-sm">
+                <div class="card-body p-4">
+                    <div class="mb-4">
+                        <label for="exam_code" class="form-label text-uppercase text-muted small fw-bold">Exam
+                            Code</label>
+                        <input type="text"
+                            class="form-control form-control-lg bg-dark text-white border-secondary text-center letter-spacing-2"
+                            id="exam_code" maxlength="10" placeholder="e.g. ABC123" style="letter-spacing: 2px;">
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary btn-lg" onclick="startExamFromInput()">Start Exam</button>
+                        <button class="btn btn-outline-secondary" onclick="enterExamFullscreen()">Go Fullscreen</button>
+                    </div>
+                    <div id="exam_status" class="mt-3 text-center"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exam Shell (Hidden initially) -->
+    <div id="exam-shell" style="display:none;">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div id="results"></div>
+                <div id="custom_attempt_result" class="mt-3 text-center"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let quizData = null;
+    let userAnswers = {};
+    let isCustomQuiz = true;
+    let activeCustomCode = null;
+    let activeCustomQuizTitle = null;
+    let customSubmitted = false;
+
+    function showStatusMessage(targetId, message, type = "info") {
+        const el = document.getElementById(targetId);
+        if (!el) return;
+        el.className = 'mt-3 text-center alert';
+        if (type === 'error') el.classList.add('alert-danger');
+        else if (type === 'success') el.classList.add('alert-success');
+        else el.classList.add('alert-info');
+        el.textContent = message || "";
+        if (!message) el.className = 'mt-3 text-center';
+    }
+
+    function enterExamFullscreen() {
+        const elem = document.documentElement;
+        if (!document.fullscreenElement && elem.requestFullscreen) {
+            elem.requestFullscreen().catch(() => { });
+        }
+    }
+
+    function startExamFromInput() {
+        const codeInput = document.getElementById('exam_code');
+        const code = (codeInput.value || '').trim().toUpperCase();
+        if (!code) {
+            showStatusMessage("exam_status", "Please enter a valid exam code.", "error");
+            return;
+        }
+        loadQuizByCode(code);
+    }
+
+    async function loadQuizByCode(code) {
+        code = (code || "").trim().toUpperCase();
+        if (!code) {
+            showStatusMessage("exam_status", "Invalid or empty quiz code.", "error");
+            return;
+        }
+        showStatusMessage("exam_status", "Loading exam...");
+        try {
+            const resp = await fetch(`/api/custom-quizzes/${code}`);
+            const data = await resp.json();
+            if (!resp.ok) {
+                showStatusMessage("exam_status", data.error || "Quiz not found.", "error");
+                return;
+            }
+            quizData = data.quiz_data;
+            if (!quizData || !quizData.questions || !quizData.questions.length) {
+                showStatusMessage("exam_status", "Quiz data is incomplete.", "error");
+                return;
+            }
+            isCustomQuiz = true;
+            activeCustomCode = data.code;
+            activeCustomQuizTitle = data.title;
+            customSubmitted = false;
+            userAnswers = {};
+
+            document.getElementById('code-card').closest('.row').style.display = 'none'; // Hide entry card
+            document.getElementById('exam-shell').style.display = 'block';
+
+            showStatusMessage("exam_status", "");
+            showStatusMessage("custom_attempt_result", "");
+            enterExamFullscreen();
+            displayQuiz(quizData);
+        } catch (error) {
+            showStatusMessage("exam_status", error.message, "error");
+        }
+    }
+
+    function displayQuiz(data) {
+        const resultsDiv = document.getElementById('results');
+        let html = '<div class="card shadow-sm border-0">';
+        html += '<div class="card-body p-4">';
+
+        if (isCustomQuiz && activeCustomCode) {
+            const label = activeCustomQuizTitle ? `· ${activeCustomQuizTitle}` : '';
+            html += `<div class="badge bg-primary mb-4">Exam Code: ${activeCustomCode} ${label}</div>`;
+        }
+
+        html += '<div id="quiz-container">';
+
+        data.questions.forEach((q, index) => {
+            html += `<div class="card bg-dark border-secondary mb-4 question-container" data-question-index="${index}">`;
+            html += `<div class="card-body">`;
+            html += `<h5 class="card-title mb-3 text-white">${index + 1}. ${q.question}</h5>`;
+            html += `<div class="list-group">`;
+
+            q.options.forEach((option, optIndex) => {
+                html += `
+                    <button type="button" class="list-group-item list-group-item-action bg-transparent text-light border-secondary option" 
+                        data-question="${index}" data-option="${optIndex}" onclick="selectAnswer(${index}, ${optIndex})">
+                        <span class="fw-bold me-2">${String.fromCharCode(65 + optIndex)}.</span> ${option}
+                    </button>
+                `;
+            });
+
+            html += `</div>`;
+            html += `<div class="alert alert-info mt-3 collapse explanation" id="explanation-${index}">`;
+            html += `<strong>Explanation:</strong> ${q.explanation}`;
+            html += `</div></div></div>`;
+        });
+
+        html += '</div>';
+
+        html += '<div class="d-grid gap-2 mt-4">';
+        html += '<button class="btn btn-primary btn-lg" onclick="onSubmitCustomQuiz()">Submit Exam</button>';
+        html += '</div>';
+
+        html += '</div></div>';
+
+        resultsDiv.innerHTML = html;
+        resultsDiv.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function selectAnswer(questionIndex, optionIndex) {
+        if (!quizData || !isCustomQuiz || customSubmitted) return;
+        const questionContainer = document.querySelector('[data-question-index="' + questionIndex + '"]');
+        if (!questionContainer) return;
+        const allOptions = questionContainer.querySelectorAll('.option');
+
+        userAnswers[questionIndex] = optionIndex;
+        allOptions.forEach((opt, idx) => {
+            opt.classList.remove('active', 'bg-primary', 'border-primary');
+            if (idx === optionIndex) {
+                opt.classList.add('active', 'bg-primary', 'border-primary');
+            }
+        });
+    }
+
+    async function onSubmitCustomQuiz(reason = "manual") {
+        if (!isCustomQuiz || !quizData || customSubmitted) return;
+
+        document.querySelectorAll('.question-container').forEach((qc, qIndex) => {
+            const options = qc.querySelectorAll('.option');
+            options.forEach((opt, idx) => {
+                opt.disabled = true;
+                if (userAnswers[qIndex] === idx) opt.classList.add('active');
+            });
+            new bootstrap.Collapse(document.getElementById('explanation-' + qIndex)).show();
+        });
+
+        quizData.questions.forEach((_, idx) => {
+            if (userAnswers[idx] === undefined) userAnswers[idx] = null;
+        });
+
+        customSubmitted = true;
+        const reasonLabel = reason === "proctor" ? " (auto-submitted by AI proctor)" : "";
+
+        await saveQuizScore();
+        showStatusMessage("custom_attempt_result", "Your exam has been submitted" + reasonLabel + ".", "success");
+    }
+
+    async function saveQuizScore() {
+        if (!isCustomQuiz || !activeCustomCode) return;
+        try {
+            const payload = {};
+            Object.keys(userAnswers).forEach(k => payload[String(k)] = userAnswers[k]);
+
+            const resp = await fetch(`/api/custom-quizzes/${activeCustomCode}/submit`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_answers: payload })
+            });
+            const data = await resp.json();
+            if (resp.ok) {
+                showStatusMessage("custom_attempt_result", `Score submitted! You scored ${data.score}/${data.total_questions} (${data.percentage}%).`, "success");
+            } else {
+                showStatusMessage("custom_attempt_result", data.error || "Unable to submit score", "error");
+            }
+        } catch (error) {
+            showStatusMessage("custom_attempt_result", error.message, "error");
+        }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && isCustomQuiz && !customSubmitted && quizData) {
+            onSubmitCustomQuiz("proctor");
+        }
+    });
+    window.addEventListener('blur', () => {
+        if (isCustomQuiz && !customSubmitted && quizData) {
+            onSubmitCustomQuiz("proctor");
+        }
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code') || params.get('quiz_code');
+        if (code) {
+            loadQuizByCode(code);
+            setTimeout(enterExamFullscreen, 300);
+        }
+    });
+</script>
+{% endblock %}

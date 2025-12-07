@@ -1,0 +1,474 @@
+{% extends "base.html" %}
+
+{% block title %}Quiz Studio - Learnex{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-5 fw-bold text-white">Quiz Studio</h1>
+        <p class="lead text-muted">Generate AI-powered practice quizzes from YouTube videos.</p>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h4 class="card-title fw-bold text-white mb-3">YouTube Quiz Generator</h4>
+                    <p class="card-text text-muted mb-4">Paste any public or unlisted YouTube link to generate questions
+                        and study notes for practice.</p>
+
+                    <div class="mb-3">
+                        <label for="yt_url" class="form-label text-uppercase text-muted small fw-bold">YouTube
+                            URL</label>
+                        <input type="text" class="form-control form-control-lg bg-dark text-white border-secondary"
+                            id="yt_url" placeholder="https://www.youtube.com/watch?v=...">
+                    </div>
+
+                    <button class="btn btn-primary btn-lg w-100" onclick="validateAndShowSettings()">
+                        Start Quiz Builder <i class="bi bi-arrow-right ms-2"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Share Banner -->
+            <div id="share_quiz_banner" class="alert alert-success d-flex align-items-center justify-content-between"
+                style="display: none !important;">
+                <div>
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    Quiz code ready! Share this: <strong id="share_quiz_code" class="ms-1"></strong>
+                </div>
+                <button class="btn btn-sm btn-success" onclick="copyShareCode()">Copy</button>
+            </div>
+
+            <!-- Settings Panel -->
+            <div id="quiz-settings" class="collapse">
+                <div class="card shadow-sm mb-4 border-primary">
+                    <div class="card-header bg-transparent border-bottom border-secondary">
+                        <h5 class="mb-0 text-white">Quiz Configuration</h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="num_questions" class="form-label text-muted small fw-bold">Number of
+                                    Questions</label>
+                                <input type="number" class="form-control bg-dark text-white border-secondary"
+                                    id="num_questions" min="3" max="20" value="5">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="difficulty" class="form-label text-muted small fw-bold">Difficulty</label>
+                                <select class="form-select bg-dark text-white border-secondary" id="difficulty">
+                                    <option value="easy">Easy</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="hard">Hard</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-4">
+                            <button class="btn btn-primary flex-grow-1" onclick="generateQuizNotes()">Generate
+                                Quiz</button>
+                            <button class="btn btn-outline-secondary" onclick="resetForm()">Start Over</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Results Area -->
+            <div id="results"></div>
+            <div id="custom_attempt_result" class="mt-3 text-center"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let quizData = null;
+    let userAnswers = {};
+    let score = 0;
+    let totalQuestions = 0;
+    let currentVideoUrl = null;
+    let currentVideoId = null;
+    let currentNumQuestions = null;
+    let currentDifficulty = null;
+    let isCustomQuiz = false;
+    let activeCustomCode = null;
+    let activeCustomQuizTitle = null;
+
+    function showStatusMessage(targetId, message, type = "info") {
+        const el = document.getElementById(targetId);
+        if (!el) return;
+
+        el.className = 'mt-3 text-center alert';
+        if (type === 'error') el.classList.add('alert-danger');
+        else if (type === 'success') el.classList.add('alert-success');
+        else el.classList.add('alert-info');
+
+        el.textContent = message || "";
+        if (!message) el.className = 'mt-3 text-center';
+    }
+
+    function toggleShareBanner(show, code = "") {
+        const banner = document.getElementById("share_quiz_banner");
+        const span = document.getElementById("share_quiz_code");
+        if (!banner) return;
+
+        if (show) {
+            span.textContent = code;
+            banner.style.setProperty('display', 'flex', 'important');
+        } else {
+            banner.style.setProperty('display', 'none', 'important');
+            span.textContent = "";
+        }
+    }
+
+    function validateAndShowSettings() {
+        let urlField = document.getElementById('yt_url');
+        let yt_url = urlField.value.trim();
+        let resultsDiv = document.getElementById('results');
+
+        if (!yt_url) {
+            showStatusMessage('custom_attempt_result', "Please enter a YouTube link.", "error");
+            return;
+        }
+
+        if (!yt_url.includes('youtube.com/watch?v=') && !yt_url.includes('youtu.be/')) {
+            showStatusMessage('custom_attempt_result', "Please enter a valid YouTube link.", "error");
+            return;
+        }
+
+        currentVideoUrl = yt_url;
+        new bootstrap.Collapse(document.getElementById('quiz-settings')).show();
+        resultsDiv.innerHTML = "";
+        toggleShareBanner(false);
+        showStatusMessage('custom_attempt_result', "");
+        isCustomQuiz = false;
+        activeCustomCode = null;
+    }
+
+    function resetForm() {
+        document.getElementById('yt_url').value = "";
+        new bootstrap.Collapse(document.getElementById('quiz-settings')).hide();
+        document.getElementById('results').innerHTML = "";
+        currentVideoUrl = null;
+        toggleShareBanner(false);
+        showStatusMessage("custom_attempt_result", "");
+        isCustomQuiz = false;
+        activeCustomCode = null;
+    }
+
+    async function generateQuizNotes() {
+        if (!currentVideoUrl) {
+            alert("Please enter a YouTube link first.");
+            return;
+        }
+
+        let numQuestions = parseInt(document.getElementById('num_questions').value) || 5;
+        let difficulty = document.getElementById('difficulty').value;
+        let resultsDiv = document.getElementById('results');
+
+        currentNumQuestions = numQuestions;
+        currentDifficulty = difficulty;
+
+        if (numQuestions < 3 || numQuestions > 20) {
+            showStatusMessage('custom_attempt_result', "Number of questions must be between 3 and 20.", "error");
+            return;
+        }
+
+        resultsDiv.innerHTML = `
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary mb-3" role="status"></div>
+                <p class="text-muted">Processing video and generating quiz...</p>
+            </div>
+        `;
+        toggleShareBanner(false);
+        showStatusMessage("custom_attempt_result", "");
+        isCustomQuiz = false;
+        activeCustomCode = null;
+
+        quizData = null;
+        userAnswers = {};
+        score = 0;
+        totalQuestions = 0;
+        try {
+            let resp = await fetch('/api/videoquiz', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    yt_url: currentVideoUrl,
+                    num_questions: numQuestions,
+                    difficulty: difficulty
+                })
+            });
+            let data = await resp.json();
+            if (data.response && data.response.questions) {
+                quizData = data.response;
+                let urlMatch = currentVideoUrl.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+                currentVideoId = urlMatch ? urlMatch[1] : null;
+                displayQuiz(quizData);
+            } else {
+                resultsDiv.innerHTML = `<div class="alert alert-danger">${data.error || "Error occurred. Please try again."}</div>`;
+            }
+        } catch (error) {
+            resultsDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+        }
+    }
+
+    function displayQuiz(data) {
+        let resultsDiv = document.getElementById('results');
+        totalQuestions = data.questions.length;
+        score = 0;
+        userAnswers = {};
+
+        let html = '<div class="card shadow-sm border-0">';
+        html += '<div class="card-body p-4">';
+
+        if (isCustomQuiz && activeCustomCode) {
+            const label = activeCustomQuizTitle ? `· ${activeCustomQuizTitle}` : '';
+            html += `<div class="badge bg-info text-dark mb-3">Custom Quiz ${activeCustomCode} ${label}</div>`;
+        }
+
+        if (!isCustomQuiz) {
+            html += '<div class="d-flex justify-content-between align-items-center mb-4">';
+            html += '<h4 class="mb-0 text-white">Score: <span id="score" class="text-primary">0</span> / ' + totalQuestions + '</h4>';
+            html += '<div class="btn-group">';
+            html += '<button class="btn btn-outline-primary btn-sm" onclick="downloadQuizPDF(event)">📥 PDF</button>';
+            html += '<button class="btn btn-outline-secondary btn-sm" onclick="createShareableQuiz()">Share Code</button>';
+            html += '</div></div>';
+        }
+
+        html += '<div id="quiz-container">';
+
+        data.questions.forEach((q, index) => {
+            html += `<div class="card bg-dark border-secondary mb-3 question-container" data-question-index="${index}">`;
+            html += `<div class="card-body">`;
+            html += `<h5 class="card-title mb-3 text-white">${index + 1}. ${q.question}</h5>`;
+            html += `<div class="list-group">`;
+
+            q.options.forEach((option, optIndex) => {
+                html += `
+                    <button type="button" class="list-group-item list-group-item-action bg-transparent text-light border-secondary option" 
+                        data-question="${index}" data-option="${optIndex}" onclick="selectAnswer(${index}, ${optIndex})">
+                        <span class="fw-bold me-2">${String.fromCharCode(65 + optIndex)}.</span> ${option}
+                    </button>
+                `;
+            });
+
+            html += `</div>`;
+            html += `<div class="alert alert-info mt-3 collapse explanation" id="explanation-${index}">`;
+            html += `<strong>Explanation:</strong> ${q.explanation}`;
+            html += `</div></div></div>`;
+        });
+
+        html += '</div>';
+
+        if (!isCustomQuiz && data.notes) {
+            html += '<div class="card bg-dark border-secondary mt-4">';
+            html += '<div class="card-header border-secondary"><h5 class="mb-0 text-white">📝 Study Notes</h5></div>';
+            html += `<div class="card-body text-muted">${data.notes}</div>`;
+            html += '</div>';
+        }
+
+        if (isCustomQuiz) {
+            html += '<div class="text-end mt-4">';
+            html += '<button class="btn btn-primary btn-lg" onclick="onSubmitCustomQuiz()">Submit Quiz</button>';
+            html += '</div>';
+        }
+
+        html += '</div></div>';
+
+        resultsDiv.innerHTML = html;
+        resultsDiv.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function selectAnswer(questionIndex, optionIndex) {
+        let question = quizData.questions[questionIndex];
+        let questionContainer = document.querySelector('[data-question-index="' + questionIndex + '"]');
+        let allOptions = questionContainer.querySelectorAll('.option');
+
+        if (isCustomQuiz) {
+            userAnswers[questionIndex] = optionIndex;
+            allOptions.forEach((opt, idx) => {
+                opt.classList.remove('active', 'bg-primary', 'border-primary');
+                if (idx === optionIndex) {
+                    opt.classList.add('active', 'bg-primary', 'border-primary');
+                }
+            });
+            return;
+        }
+
+        if (userAnswers[questionIndex] !== undefined) return;
+
+        let isCorrect = optionIndex === question.correct;
+        userAnswers[questionIndex] = optionIndex;
+
+        if (isCorrect) {
+            score++;
+            document.getElementById('score').textContent = score;
+        }
+
+        allOptions.forEach((opt, idx) => {
+            opt.disabled = true;
+            opt.classList.remove('list-group-item-action');
+
+            if (idx === optionIndex) {
+                if (isCorrect) {
+                    opt.classList.add('bg-success', 'text-white', 'border-success');
+                } else {
+                    opt.classList.add('bg-danger', 'text-white', 'border-danger');
+                }
+            } else if (idx === question.correct) {
+                opt.classList.add('bg-success', 'text-white', 'border-success');
+            }
+        });
+
+        new bootstrap.Collapse(document.getElementById('explanation-' + questionIndex)).show();
+
+        if (Object.keys(userAnswers).length === totalQuestions) {
+            saveQuizScore();
+        }
+    }
+
+    let customSubmitted = false;
+
+    async function onSubmitCustomQuiz(reason = "manual") {
+        if (!isCustomQuiz || !quizData || customSubmitted) return;
+
+        document.querySelectorAll('.question-container').forEach((qc, qIndex) => {
+            const options = qc.querySelectorAll('.option');
+            options.forEach((opt, idx) => {
+                opt.disabled = true;
+                if (userAnswers[qIndex] === idx) {
+                    opt.classList.add('active');
+                }
+            });
+            new bootstrap.Collapse(document.getElementById('explanation-' + qIndex)).show();
+        });
+
+        quizData.questions.forEach((_, idx) => {
+            if (userAnswers[idx] === undefined) userAnswers[idx] = null;
+        });
+
+        customSubmitted = true;
+        const reasonLabel = reason === "proctor" ? " (auto-submitted by AI proctor)" : "";
+
+        await saveQuizScore();
+        showStatusMessage("custom_attempt_result", "Your exam has been submitted" + reasonLabel + ".", "success");
+    }
+
+    async function saveQuizScore() {
+        if (isCustomQuiz && activeCustomCode) {
+            if (customSubmitted) return;
+            try {
+                let resp = await fetch(`/api/custom-quizzes/${activeCustomCode}/submit`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_answers: userAnswers })
+                });
+                let data = await resp.json();
+                if (resp.ok) {
+                    showStatusMessage("custom_attempt_result", `Score submitted! You scored ${data.score}/${data.total_questions} (${data.percentage}%).`, "success");
+                } else {
+                    showStatusMessage("custom_attempt_result", data.error || "Unable to submit score", "error");
+                }
+            } catch (error) {
+                showStatusMessage("custom_attempt_result", error.message, "error");
+            }
+            return;
+        }
+
+        if (!currentVideoId || !currentNumQuestions || !currentDifficulty) return;
+
+        try {
+            await fetch('/api/save-quiz-score', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    video_id: currentVideoId,
+                    video_url: currentVideoUrl,
+                    num_questions: currentNumQuestions,
+                    difficulty: currentDifficulty,
+                    score: score,
+                    total_questions: totalQuestions,
+                    user_answers: userAnswers
+                })
+            });
+        } catch (error) {
+            console.error("Error saving score:", error);
+        }
+    }
+
+    async function downloadQuizPDF(event) {
+        if (!quizData) {
+            alert("No quiz data available.");
+            return;
+        }
+        try {
+            let videoTitle = "Video_Quiz";
+            let downloadBtn = event ? event.target : document.querySelector('.download-btn');
+            let originalText = downloadBtn.innerHTML;
+            downloadBtn.innerHTML = "⏳ Generating...";
+            downloadBtn.disabled = true;
+
+            let resp = await fetch('/api/download-quiz-pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quiz_data: quizData, video_title: videoTitle })
+            });
+
+            if (resp.ok) {
+                const blob = await resp.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `quiz_${videoTitle}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } else {
+                alert("Error generating PDF.");
+            }
+            downloadBtn.innerHTML = originalText;
+            downloadBtn.disabled = false;
+        } catch (error) {
+            alert("Error downloading PDF: " + error.message);
+        }
+    }
+
+    async function createShareableQuiz() {
+        if (!quizData || !quizData.questions || !quizData.questions.length) {
+            alert("Please generate a quiz first.");
+            return;
+        }
+        try {
+            const resp = await fetch('/api/custom-quizzes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    quiz_data: quizData,
+                    video_url: currentVideoUrl,
+                    num_questions: currentNumQuestions,
+                    difficulty: currentDifficulty,
+                    title: `Quiz from ${currentVideoUrl || "Video"}`
+                })
+            });
+            const data = await resp.json();
+            if (resp.ok && data.code) {
+                toggleShareBanner(true, data.code);
+                showStatusMessage("custom_attempt_result", `Share code ${data.code} created.`, "success");
+            } else {
+                alert(data.error || "Unable to create quiz code.");
+            }
+        } catch (error) {
+            alert("Error creating quiz code: " + error.message);
+        }
+    }
+
+    function copyShareCode() {
+        const code = document.getElementById("share_quiz_code").textContent;
+        if (!code) return;
+        navigator.clipboard.writeText(code);
+        alert("Quiz code copied!");
+    }
+</script>
+{% endblock %}

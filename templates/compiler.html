@@ -1,0 +1,469 @@
+{% extends "base.html" %}
+
+{% block title %}DSA Practice - Learnex{% endblock %}
+
+{% block head %}
+<style>
+    #editor {
+        width: 100%;
+        height: 500px;
+        border: 1px solid #444;
+    }
+
+    .output-console {
+        background-color: #1e1e1e;
+        color: #d4d4d4;
+        font-family: 'Consolas', 'Monaco', monospace;
+        padding: 10px;
+        height: 200px;
+        overflow-y: auto;
+        border-radius: 4px;
+    }
+
+    .question-item {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .question-item:hover {
+        background-color: #2d2d2d;
+        color: #fff;
+    }
+
+    .question-item.active {
+        background-color: #0d6efd;
+        color: #fff;
+        border-left: 3px solid #fff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <!-- Questions Sidebar -->
+        <div class="col-md-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-header bg-transparent border-bottom">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="mb-0">Questions</h5>
+                        <button class="btn btn-sm btn-outline-primary" onclick="generateQuestions()">
+                            <i class="bi bi-magic"></i> New
+                        </button>
+                    </div>
+                    <input type="text" id="question-search" class="form-control form-control-sm"
+                        placeholder="Search questions..." onkeyup="filterQuestions()">
+                </div>
+                <div class="list-group list-group-flush overflow-auto" style="max-height: 600px;" id="question-list">
+                    <!-- Questions will be loaded here -->
+                    <div class="text-center p-3 text-muted">
+                        <small>Click "New" to generate questions</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Problem Description Column -->
+        <div class="col-md-4">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-header bg-transparent border-bottom">
+                    <h5 class="mb-0" id="problem-title">Select a Question</h5>
+                    <span class="badge bg-secondary" id="problem-difficulty"></span>
+                </div>
+                <div class="card-body overflow-auto" style="max-height: 600px;" id="problem-description">
+                    <p class="text-muted">Select a question from the sidebar to start coding.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Code Editor Column -->
+        <div class="col-md-5">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent border-bottom d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Code Editor</h5>
+                    <div class="d-flex gap-2">
+                        <select id="language-select" class="form-select form-select-sm" style="width: auto;"
+                            onchange="changeLanguage()">
+                            <option value="java" selected>Java</option>
+                            <option value="python">Python</option>
+                            <option value="c">C</option>
+                        </select>
+                        <button id="run-btn" class="btn btn-success btn-sm" onclick="runCode()">
+                            <i class="bi bi-play-fill"></i> Run
+                        </button>
+                        <button id="submit-btn" class="btn btn-primary btn-sm" onclick="submitCode()">
+                            <i class="bi bi-check-circle-fill"></i> Submit
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div id="editor"></div>
+                </div>
+                <div class="card-footer bg-dark">
+                    <h6 class="text-white-50 mb-2">Output:</h6>
+                    <div id="output" class="output-console">
+                        // Output will appear here...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- API Key Modal -->
+<div class="modal fade" id="apiKeyModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Enter Gemini API Key</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>To generate new questions, please enter your Gemini API Key.</p>
+                <input type="text" id="gemini-api-key" class="form-control" placeholder="AIzaSy...">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="submitGeneration()">Generate</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Test Results Modal -->
+<div class="modal fade" id="resultsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Submission Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="results-body">
+                <!-- Results will be injected here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Monaco Editor Loader -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs/loader.min.js"></script>
+<script>
+    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.36.1/min/vs' } });
+
+    let editor;
+    let currentQuestion = null;
+
+    const boilerplates = {
+        java: 'public class Main {\n    public static void main(String[] args) {\n        // Write your solution here\n        System.out.println("Hello Java!");\n    }\n}',
+        python: 'def main():\n    # Write your solution here\n    print("Hello Python!")\n\nif __name__ == "__main__":\n    main()',
+        c: '#include <stdio.h>\n\nint main() {\n    // Write your solution here\n    printf("Hello C!\\n");\n    return 0;\n}'
+    };
+
+    require(['vs/editor/editor.main'], function () {
+        editor = monaco.editor.create(document.getElementById('editor'), {
+            value: boilerplates.java,
+            language: 'java',
+            theme: 'vs-dark',
+            automaticLayout: true
+        });
+
+        loadQuestions();
+    });
+
+    function changeLanguage() {
+        const lang = document.getElementById('language-select').value;
+        monaco.editor.setModelLanguage(editor.getModel(), lang === 'c' ? 'c' : lang);
+        editor.setValue(boilerplates[lang]);
+    }
+
+    function generateQuestions() {
+        const apiKey = localStorage.getItem('gemini_api_key');
+        if (!apiKey) {
+            new bootstrap.Modal(document.getElementById('apiKeyModal')).show();
+            return;
+        }
+        submitGeneration();
+    }
+
+    function submitGeneration() {
+        const apiKey = document.getElementById('gemini-api-key').value || localStorage.getItem('gemini_api_key');
+        if (!apiKey) {
+            alert("Please enter your Gemini API Key.");
+            return;
+        }
+
+        localStorage.setItem('gemini_api_key', apiKey);
+
+        const btn = document.querySelector('#apiKeyModal .btn-primary');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = "Generating...";
+
+        fetch('/api/generate_questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: apiKey })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    alert(`Generated ${data.count} new questions!`);
+                    bootstrap.Modal.getInstance(document.getElementById('apiKeyModal')).hide();
+                    loadQuestions();
+                }
+            })
+            .catch(err => alert('Network Error: ' + err))
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerText = originalText;
+            });
+    }
+
+    function loadQuestions() {
+        const list = document.getElementById('question-list');
+
+        fetch('/api/questions')
+            .then(res => res.json())
+            .then(questions => {
+                if (questions.length === 0) {
+                    list.innerHTML = '<div class="text-center p-3 text-muted"><small>Click "New" to generate questions</small></div>';
+                    return;
+                }
+
+                list.innerHTML = '';
+                questions.forEach((q, index) => {
+                    const item = document.createElement('a');
+                    item.className = 'list-group-item list-group-item-action question-item';
+                    item.innerHTML = `
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">
+                                ${q.title}
+                                ${q.solved ? '<span class="badge bg-success ms-2">Solved</span>' : ''}
+                            </h6>
+                            <small class="text-${q.difficulty === 'Easy' ? 'success' : 'warning'}">${q.difficulty}</small>
+                        </div>
+                        <small class="text-muted">${q.topic}</small>
+                    `;
+                    item.onclick = () => selectQuestion(q, item);
+                    list.appendChild(item);
+
+                    // Select first question by default
+                    if (index === 0 && !currentQuestion) {
+                        selectQuestion(q, item);
+                    }
+                });
+            })
+            .catch(err => console.error('Error loading questions:', err));
+    }
+
+    function selectQuestion(q, element) {
+        currentQuestion = q;
+
+        // Update active state
+        document.querySelectorAll('.question-item').forEach(el => el.classList.remove('active'));
+        if (element) element.classList.add('active');
+
+        // Update UI
+        document.getElementById('problem-title').innerText = q.title;
+        document.getElementById('problem-difficulty').innerText = q.difficulty;
+        document.getElementById('problem-difficulty').className = `badge bg-${q.difficulty === 'Easy' ? 'success' : 'warning'}`;
+
+        let descHtml = `<p>${q.description}</p>`;
+
+        // Show example test case (first one usually)
+        if (q.test_cases && q.test_cases.length > 0) {
+            const example = q.test_cases[0];
+            descHtml += `
+                <h6>Example:</h6>
+                <pre class="bg-dark text-light p-2 rounded" style="border: 1px solid #444;">Input: ${example.input}\nOutput: ${example.output}</pre>
+            `;
+        }
+
+        document.getElementById('problem-description').innerHTML = descHtml;
+
+        // Update Editor with standard boilerplate
+        const lang = document.getElementById('language-select').value;
+        editor.setValue(boilerplates[lang]);
+
+        // Handle Solved State
+        const submitBtn = document.getElementById('submit-btn');
+        if (q.solved) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Solved';
+            submitBtn.classList.remove('btn-primary');
+            submitBtn.classList.add('btn-success');
+        } else {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Submit';
+            submitBtn.classList.add('btn-primary');
+            submitBtn.classList.remove('btn-success');
+        }
+    }
+
+    function runCode() {
+        if (!currentQuestion) {
+            alert("Please select a question first.");
+            return;
+        }
+
+        const runBtn = document.getElementById('run-btn');
+        const outputDiv = document.getElementById('output');
+        const lang = document.getElementById('language-select').value;
+        const code = editor.getValue();
+
+        runBtn.disabled = true;
+        outputDiv.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Running...';
+
+        // Use the first test case as the example input/expected output for 'Run'
+        const example = currentQuestion.test_cases && currentQuestion.test_cases.length > 0 ? currentQuestion.test_cases[0] : { input: '', output: '' };
+        const input = example.input;
+        const expected = example.output;
+
+        fetch('/api/execute_code', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                source_code: code,
+                language: lang,
+                stdin: input,
+                question_id: currentQuestion._id
+            })
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    outputDiv.innerHTML = `<span class="text-danger">Error: ${data.error}</span>`;
+                } else {
+                    let outputHtml = '';
+                    const stdout = data.stdout ? data.stdout.trim() : "";
+                    const isCorrect = stdout === expected.trim();
+
+                    outputHtml += `<div class="mb-2">
+                    <span class="badge bg-${isCorrect ? 'success' : 'danger'}">${isCorrect ? 'Passed Example' : 'Failed Example'}</span>
+                </div>`;
+
+                    outputHtml += `<div><strong>Input:</strong> <pre class="text-muted mb-1">${input}</pre></div>`;
+                    outputHtml += `<div><strong>Expected Output:</strong> <pre class="text-success mb-1">${expected}</pre></div>`;
+
+                    if (data.stdout) {
+                        outputHtml += `<div><strong>Your Output:</strong> <pre class="${isCorrect ? 'text-success' : 'text-danger'} mb-1">${data.stdout}</pre></div>`;
+                    }
+
+                    if (data.stderr) {
+                        outputHtml += `<div><strong>Error:</strong> <pre class="text-danger mb-1">${data.stderr}</pre></div>`;
+                    }
+
+                    if (data.compile_output) {
+                        outputHtml += `<div><strong>Compilation:</strong> <pre class="text-warning mb-1">${data.compile_output}</pre></div>`;
+                    }
+
+                    outputDiv.innerHTML = outputHtml;
+                }
+            })
+            .catch(error => {
+                outputDiv.innerHTML = `<span class="text-danger">Network Error: ${error.message}</span>`;
+            })
+            .finally(() => {
+                runBtn.disabled = false;
+            });
+    }
+
+    function filterQuestions() {
+        const input = document.getElementById('question-search');
+        const filter = input.value.toLowerCase();
+        const items = document.getElementsByClassName('question-item');
+
+        for (let i = 0; i < items.length; i++) {
+            const text = items[i].innerText || items[i].textContent;
+            if (text.toLowerCase().indexOf(filter) > -1) {
+                items[i].style.display = "";
+            } else {
+                items[i].style.display = "none";
+            }
+        }
+    }
+
+    function submitCode() {
+        if (!currentQuestion) {
+            alert("Please select a question first.");
+            return;
+        }
+
+        const submitBtn = document.getElementById('submit-btn');
+        const lang = document.getElementById('language-select').value;
+        const code = editor.getValue();
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Testing...';
+
+        fetch('/api/submit_code', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                source_code: code,
+                language: lang,
+                question_id: currentQuestion._id
+            })
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                const modalBody = document.getElementById('results-body');
+                let html = '';
+
+                if (data.all_passed) {
+                    html += `<div class="alert alert-success">
+                    <h4><i class="bi bi-trophy-fill"></i> All Test Cases Passed!</h4>
+                    <p>Points Awarded: <strong>+${data.points_awarded}</strong></p>
+                    <p>Total Score: <strong>${data.new_total_score}</strong></p>
+                </div>`;
+                } else {
+                    html += `<div class="alert alert-danger">
+                    <h4><i class="bi bi-x-circle-fill"></i> Some Test Cases Failed</h4>
+                    <p>Please check your logic and try again.</p>
+                </div>`;
+                }
+
+                html += '<ul class="list-group">';
+                data.results.forEach(r => {
+                    html += `<li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>Test Case ${r.case_index}</strong>
+                        ${r.hidden ? '<span class="badge bg-secondary ms-2">Hidden</span>' : ''}
+                    </div>
+                    <span class="badge bg-${r.passed ? 'success' : 'danger'} rounded-pill">
+                        ${r.passed ? 'Passed' : 'Failed'}
+                    </span>
+                </li>`;
+                    if (!r.passed && !r.hidden) {
+                        html += `<li class="list-group-item bg-light text-danger">
+                        <small>Expected: ${r.expected}<br>Actual: ${r.actual}</small>
+                    </li>`;
+                    }
+                });
+                html += '</ul>';
+
+                modalBody.innerHTML = html;
+                new bootstrap.Modal(document.getElementById('resultsModal')).show();
+            })
+            .catch(err => alert('Network Error: ' + err))
+            .finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle-fill"></i> Submit';
+            });
+    }
+</script>
+{% endblock %}

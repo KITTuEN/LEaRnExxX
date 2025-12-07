@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}Learnex - Learning Platform{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold text-white mb-3">Welcome to Your Learning Hub</h1>
+        <p class="lead text-muted">Use AI to chat, generate practice quizzes, create custom exams, and review all your
+            activity in one place.</p>
+    </div>
+
+    <div class="row g-4">
+        <!-- Chatbot -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title fw-bold text-white mb-3">💬 Chatbot</h5>
+                    <p class="card-text text-muted flex-grow-1">Ask coding and technical questions, get explanations,
+                        and see formatted code examples powered by Gemini AI.</p>
+                    <a href="{{ url_for('chat_main') }}" class="btn btn-primary mt-3 w-100">Open Chatbot</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Video Quiz -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title fw-bold text-white mb-3">🎥 Video Quiz</h5>
+                    <p class="card-text text-muted flex-grow-1">Paste an educational YouTube link and instantly generate
+                        practice MCQs and study notes from the video content.</p>
+                    <a href="{{ url_for('videoquiz') }}" class="btn btn-primary mt-3 w-100">Start Video Quiz</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Custom Quiz -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title fw-bold text-white mb-3">🧩 Quiz Builder</h5>
+                    <p class="card-text text-muted flex-grow-1">Design your own exam-style quizzes manually or with AI,
+                        then share a code so students can attempt them.</p>
+                    <a href="{{ url_for('custom_quiz_builder') }}" class="btn btn-primary mt-3 w-100">Build Quiz</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Custom Exam -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title fw-bold text-white mb-3">🧪 Custom Exam</h5>
+                    <p class="card-text text-muted flex-grow-1">Enter an exam code from your instructor to start a
+                        fullscreen, proctored attempt with auto-submit.</p>
+                    <a href="{{ url_for('custom_quiz_exam') }}" class="btn btn-primary mt-3 w-100">Enter Exam Code</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Aptitude Quiz -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title fw-bold text-white mb-3">🧠 Aptitude Quiz</h5>
+                    <p class="card-text text-muted flex-grow-1">Practice with 10,000+ aptitude questions across easy,
+                        medium, and hard difficulty levels.</p>
+                    <a href="{{ url_for('aptitude_quiz') }}" class="btn btn-primary mt-3 w-100">Start Aptitude</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- DSA Practice -->
+        <div class="col-md-6 col-lg-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title fw-bold text-white mb-3">💻 DSA Practice</h5>
+                    <p class="card-text text-muted flex-grow-1">Write and execute Java code for Data Structures and
+                        Algorithms problems in our online compiler.</p>
+                    <div class="mb-3">
+                        <span class="badge bg-success p-2 w-100">Current Score: {{ current_user.dsa_score }}</span>
+                    </div>
+                    <a href="{{ url_for('compiler') }}" class="btn btn-primary w-100">Start Coding</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
