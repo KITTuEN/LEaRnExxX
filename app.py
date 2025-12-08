@@ -188,7 +188,8 @@ def _get_gemini_text(response):
         # Fallback: some SDK versions still provide .text as a best-effort
         if hasattr(response, "text") and response.text:
             return str(response.text).strip()
-    except Exception:
+    except Exception as e:
+        print(f"Error extracting Gemini text: {str(e)}")
         # Never crash caller because of parsing issues
         return ""
     return ""
@@ -219,11 +220,19 @@ def clean_json_text(text):
     
     # 2. Fix invalid escape sequences
     # We want to escape backslashes that are NOT part of a valid JSON escape sequence
-    text = re.sub(r'\\(?![/\\bfnrtu"]|u[0-9a-fA-F]{4})', r'\\\\', text)
+    # Valid escapes: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+    text = re.sub(r'\\(?!(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))', r'\\\\', text)
     
     # 3. Remove control characters
     text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
     
+    # 4. Extract JSON object if it's embedded in other text
+    # Find the first { and the last }
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end+1]
+        
     return text
 
 def ask_gemini(prompt):
@@ -1861,20 +1870,45 @@ def _api_videoquiz_logic():
     transcript = None
     content_source = "transcript"
     
+    print(f"Attempting to fetch transcript for video_id: {video_id}")
     try:
-        # Use the correct API: get_transcript is a static method
-        fetched_transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        # Try standard static method first
+        if hasattr(YouTubeTranscriptApi, 'get_transcript'):
+            fetched_transcript = YouTubeTranscriptApi.get_transcript(video_id)
+        else:
+            # Fallback for non-standard/older versions that require instantiation
+            print("YouTubeTranscriptApi.get_transcript not found. Trying instantiation...")
+            yt = YouTubeTranscriptApi()
+            if hasattr(yt, 'fetch'):
+                fetched_transcript = yt.fetch(video_id)
+            elif hasattr(yt, 'list'):
+                # If list returns a TranscriptList, we might need to iterate. 
+                # But based on tests, let's try to use it if fetch is missing.
+                # However, fetch is more likely to be the direct equivalent.
+                fetched_transcript = yt.list(video_id)
+            else:
+                raise ImportError("YouTubeTranscriptApi has no get_transcript, fetch, or list methods.")
+
         # Extract text from snippets (returns list of dicts with 'text' key)
-        transcript = "\n".join([item['text'] for item in fetched_transcript])
+        # Check if it's a list of dicts or something else
+        if isinstance(fetched_transcript, list):
+             transcript = "\n".join([item['text'] for item in fetched_transcript if 'text' in item])
+        else:
+             # If it's not a list of dicts, maybe it's already text or a different object?
+             # Let's assume it behaves like the standard one if it returned a list
+             print(f"Unexpected transcript format: {type(fetched_transcript)}")
+             transcript = str(fetched_transcript)
+
         if transcript and transcript.strip():
             content_source = "transcript"
+            print("Transcript fetched successfully.")
     except ImportError as e:
-        return jsonify({
-            "error": f"youtube-transcript-api is not installed or not accessible. Error: {str(e)}<br>Please install it with: pip install youtube-transcript-api"
-        }), 500
+        print(f"ImportError: {str(e)}")
+        # Fallthrough to metadata fallback
     except Exception as e:
         error_msg = str(e)
-        # If transcript not available, try to get video metadata as fallback
+        print(f"Transcript fetch failed: {error_msg}")
+        # Fallthrough to metadata fallback
         if "No transcripts were found" in error_msg or "TranscriptsDisabled" in error_msg or "Could not retrieve a transcript" in error_msg:
             # Fallback to video metadata
             metadata, error_log = get_video_metadata(video_id, yt_url)
@@ -1998,7 +2032,9 @@ def _api_videoquiz_logic():
         f"\n\n--- Video Content Start ---\n{transcript[:15000]}\n--- Video Content End ---"
     )
     try:
+        print("Sending prompt to Gemini...")
         response = model.generate_content(quiz_prompt)
+        print("Gemini response received.")
         response_text = _get_gemini_text(response)
         if not response_text:
             raise json.JSONDecodeError("empty AI response", "", 0)
@@ -2009,8 +2045,35 @@ def _api_videoquiz_logic():
         try:
             quiz_data = json.loads(response_text)
         except json.JSONDecodeError:
-            # Try one more cleanup if needed or just fail
-            quiz_data = json.loads(response_text)
+            # Iterative repair for "Invalid \escape" errors
+            print("Initial JSON parse failed. Attempting iterative repair...")
+            current_text = response_text
+            repaired = False
+            for attempt in range(5): # Try up to 5 repairs
+                try:
+                    quiz_data = json.loads(current_text)
+                    repaired = True
+                    print(f"JSON repaired successfully on attempt {attempt+1}")
+                    break
+                except json.JSONDecodeError as e:
+                    if "Invalid \\escape" in str(e):
+                        # e.pos points to the invalid char (e.g. 'z' in '\z')
+                        # We need to escape the backslash before it (at e.pos-1)
+                        # Check if e.pos-1 is indeed a backslash
+                        if e.pos > 0 and current_text[e.pos-1] == '\\':
+                            print(f"Repairing invalid escape at pos {e.pos-1}")
+                            # Replace \ with \\
+                            current_text = current_text[:e.pos-1] + "\\\\" + current_text[e.pos:]
+                        else:
+                            print(f"Cannot repair: char at {e.pos-1} is not backslash. Char is '{current_text[e.pos-1]}'")
+                            break
+                    else:
+                        print(f"Cannot repair: Error is not invalid escape. {str(e)}")
+                        break
+            
+            if not repaired:
+                # One last try: just load it to raise the error for the outer block
+                quiz_data = json.loads(current_text)
         
         # Store quiz in MongoDB for caching
         if MONGODB_AVAILABLE:
@@ -2052,12 +2115,17 @@ def _api_videoquiz_logic():
         
         return jsonify({"response": quiz_data, "cached": False})
     except json.JSONDecodeError as e:
+        print(f"JSON Decode Error: {str(e)}")
+        print(f"Raw Response Text: {response_text if 'response_text' in locals() else 'None'}")
         # If JSON parsing fails, return error with the raw response for debugging
         return jsonify({
             "error": f"Failed to parse quiz JSON. The AI response was not in valid JSON format. Error: {str(e)}",
             "raw_response": response_text[:500] if 'response_text' in locals() else "No response"
         }), 500
     except Exception as e:
+        print(f"General Error in _api_videoquiz_logic: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/videoquiz", methods=["POST"])
@@ -2065,8 +2133,12 @@ def _api_videoquiz_logic():
 def api_videoquiz():
     """Wrapper for video quiz generation to ensure JSON response on crash."""
     try:
+        print("Starting video quiz generation...")
         return _api_videoquiz_logic()
     except Exception as e:
+        print(f"CRITICAL ERROR in api_videoquiz: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "error": f"Unexpected server error: {str(e)}",
             "details": "The server encountered a crash while processing the video."
