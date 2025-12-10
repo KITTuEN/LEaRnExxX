@@ -3237,7 +3237,7 @@ def sitemap():
     return Response('\n'.join(sitemap_xml), mimetype='application/xml')
 
 @app.route("/robots.txt")
-def robots():
+def robots_txt():
     """Serve robots.txt for SEO."""
     host = request.host_url.rstrip('/')
     lines = [
