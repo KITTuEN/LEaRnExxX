@@ -7,9 +7,14 @@ debug_email.py
 # Android/Gradle
 .gradle/
 build/
-app/build/
+app/
+gradle/
+gradlew
+gradlew.bat
 *.iml
 local.properties
 .idea/
 *.apk
 *.aab
+*.gradle.kts
+gradle.properties
