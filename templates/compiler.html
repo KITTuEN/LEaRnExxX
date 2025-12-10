@@ -1,126 +1,83 @@
-{% extends "base.html" %}
-
-{% block title %}DSA Practice - Learnex{% endblock %}
-
-{% block head %}
-<style>
-    #editor {
-        width: 100%;
-        height: 500px;
-        border: 1px solid #444;
-    }
-
-    .output-console {
-        background-color: #1e1e1e;
-        color: #d4d4d4;
-        font-family: 'Consolas', 'Monaco', monospace;
-        padding: 10px;
-        height: 200px;
-        overflow-y: auto;
-        border-radius: 4px;
-    }
-
-    .question-item {
-        cursor: pointer;
-        transition: background-color 0.2s;
-    }
-
-    .question-item:hover {
-        background-color: #2d2d2d;
-        color: #fff;
-    }
-
-    .question-item.active {
-        background-color: #0d6efd;
-        color: #fff;
-        border-left: 3px solid #fff;
-    }
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="container-fluid py-4">
-    <div class="row">
-        <!-- Questions Sidebar -->
-        <div class="col-md-3" id="sidebar-col">
-            <div class="card h-100 border-0 shadow-sm">
-                <div class="card-header bg-transparent border-bottom">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div class="d-flex align-items-center gap-2">
-                            <button class="btn btn-sm btn-outline-secondary" onclick="toggleSidebar()"
-                                title="Hide Questions">
-                                <i class="bi bi-list"></i>
-                            </button>
-                            <h5 class="mb-0">Questions</h5>
-                        </div>
-                        <button class="btn btn-sm btn-outline-primary" onclick="generateQuestions()"
-                            title="Generate New">
-                            <i class="bi bi-magic"></i> New
-                        </button>
-                    </div>
-                    <input type="text" id="question-search" class="form-control form-control-sm"
-                        placeholder="Search questions..." onkeyup="filterQuestions()">
-                </div>
-                <div class="list-group list-group-flush overflow-auto" style="max-height: 600px;" id="question-list">
-                    <!-- Questions will be loaded here -->
-                    <div class="text-center p-3 text-muted">
-                        <small>Click "New" to generate questions</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Problem Description Column -->
-        <div class="col-md-4" id="problem-col">
-            <div class="card h-100 border-0 shadow-sm">
-                <div class="card-header bg-transparent border-bottom d-flex justify-content-between align-items-center">
+<div class="row">
+    <!-- Questions Sidebar -->
+    <div class="col-md-3" id="sidebar-col">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-header bg-transparent border-bottom">
+                <div class="d-flex justify-content-between align-items-center mb-2">
                     <div class="d-flex align-items-center gap-2">
-                        <button class="btn btn-sm btn-outline-secondary" id="show-sidebar-btn" onclick="toggleSidebar()"
-                            style="display: none;" title="Show Questions">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="toggleSidebar()"
+                            title="Hide Questions">
                             <i class="bi bi-list"></i>
                         </button>
-                        <h5 class="mb-0" id="problem-title">Select a Question</h5>
+                        <h5 class="mb-0">Questions</h5>
                     </div>
-                    <span class="badge bg-secondary" id="problem-difficulty"></span>
+                    <button class="btn btn-sm btn-outline-primary" onclick="generateQuestions()" title="Generate New">
+                        <i class="bi bi-magic"></i> New
+                    </button>
                 </div>
-                <div class="card-body overflow-auto" style="max-height: 600px;" id="problem-description">
-                    <p class="text-muted">Select a question from the sidebar to start coding.</p>
-                </div>
+                <input type="text" id="question-search" class="form-control form-control-sm"
+                    placeholder="Search questions..." onkeyup="filterQuestions()">
             </div>
-        </div>
-
-        <!-- Code Editor Column -->
-        <div class="col-md-5" id="editor-col">
-            <div class="card border-0 shadow-sm">
-                <div class="card-header bg-transparent border-bottom d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Code Editor</h5>
-                    <div class="d-flex gap-2">
-                        <select id="language-select" class="form-select form-select-sm" style="width: auto;"
-                            onchange="changeLanguage()">
-                            <option value="java" selected>Java</option>
-                            <option value="python">Python</option>
-                            <option value="c">C</option>
-                        </select>
-                        <button id="run-btn" class="btn btn-success btn-sm" onclick="runCode()">
-                            <i class="bi bi-play-fill"></i> Run
-                        </button>
-                        <button id="submit-btn" class="btn btn-primary btn-sm" onclick="submitCode()">
-                            <i class="bi bi-check-circle-fill"></i> Submit
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body p-0">
-                    <div id="editor"></div>
-                </div>
-                <div class="card-footer bg-dark">
-                    <h6 class="text-white-50 mb-2">Output:</h6>
-                    <div id="output" class="output-console">
-                        // Output will appear here...
-                    </div>
+            <div class="list-group list-group-flush overflow-auto" style="max-height: 600px;" id="question-list">
+                <!-- Questions will be loaded here -->
+                <div class="text-center p-3 text-muted">
+                    <small>Click "New" to generate questions</small>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Problem Description Column -->
+    <div class="col-md-4" id="problem-col">
+        <div class="card h-100 border-0 shadow-sm">
+            <div class="card-header bg-transparent border-bottom d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" id="show-sidebar-btn" onclick="toggleSidebar()"
+                        style="display: none;" title="Show Questions">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    <h5 class="mb-0" id="problem-title">Select a Question</h5>
+                </div>
+                <span class="badge bg-secondary" id="problem-difficulty"></span>
+            </div>
+            <div class="card-body overflow-auto" style="max-height: 600px;" id="problem-description">
+                <p class="text-muted">Select a question from the sidebar to start coding.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Code Editor Column -->
+    <div class="col-md-5" id="editor-col">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-bottom d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Code Editor</h5>
+                <div class="d-flex gap-2">
+                    <select id="language-select" class="form-select form-select-sm" style="width: auto;"
+                        onchange="changeLanguage()">
+                        <option value="java" selected>Java</option>
+                        <option value="python">Python</option>
+                        <option value="c">C</option>
+                    </select>
+                    <button id="run-btn" class="btn btn-success btn-sm" onclick="runCode()">
+                        <i class="bi bi-play-fill"></i> Run
+                    </button>
+                    <button id="submit-btn" class="btn btn-primary btn-sm" onclick="submitCode()">
+                        <i class="bi bi-check-circle-fill"></i> Submit
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="editor"></div>
+            </div>
+            <div class="card-footer bg-dark">
+                <h6 class="text-white-50 mb-2">Output:</h6>
+                <div id="output" class="output-console">
+                    // Output will appear here...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 </div>
 
 <!-- API Key Modal -->
