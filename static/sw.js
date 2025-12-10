@@ -1,6 +1,5 @@
 const CACHE_NAME = 'learnex-v1';
 const ASSETS_TO_CACHE = [
-    '/',
     '/static/css/style.css',
     '/static/manifest.json',
     'https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css',
@@ -19,10 +18,21 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-    event.respondWith(
-        caches.match(event.request)
-            .then((response) => {
-                return response || fetch(event.request);
-            })
-    );
+    // For navigation requests (HTML pages), use Network First, fall back to Cache
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request)
+                .catch(() => {
+                    return caches.match(event.request);
+                })
+        );
+    } else {
+        // For other requests (static assets), use Cache First, fall back to Network
+        event.respondWith(
+            caches.match(event.request)
+                .then((response) => {
+                    return response || fetch(event.request);
+                })
+        );
+    }
 });

@@ -732,6 +732,12 @@ def index():
         return redirect(url_for('home'))
     return redirect(url_for('login'))
 
+@app.route('/sw.js')
+def service_worker():
+    response = send_file('static/sw.js', mimetype='application/javascript')
+    response.headers['Service-Worker-Allowed'] = '/'
+    return response
+
 @app.route("/compiler")
 @login_required
 def compiler():
