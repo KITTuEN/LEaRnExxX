@@ -124,13 +124,13 @@
             showStatusMessage("exam_status", "");
             showStatusMessage("custom_attempt_result", "");
             enterExamFullscreen();
-            displayQuiz(quizData);
+            displayQuiz(quizData, data.active);
         } catch (error) {
             showStatusMessage("exam_status", error.message, "error");
         }
     }
 
-    function displayQuiz(data) {
+    function displayQuiz(data, isActive) {
         const resultsDiv = document.getElementById('results');
         let html = '<div class="card shadow-sm border-0">';
         html += '<div class="card-body p-4">';
@@ -138,6 +138,10 @@
         if (isCustomQuiz && activeCustomCode) {
             const label = activeCustomQuizTitle ? `· ${activeCustomQuizTitle}` : '';
             html += `<div class="badge bg-primary mb-4">Exam Code: ${activeCustomCode} ${label}</div>`;
+
+            if (isActive === false) {
+                html += `<div class="alert alert-warning mb-4"><i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Preview Mode:</strong> This quiz is currently inactive. Only you (the owner) can view this.</div>`;
+            }
         }
 
         html += '<div id="quiz-container">';
@@ -246,8 +250,15 @@
             onSubmitCustomQuiz("proctor");
         }
     });
+
     window.addEventListener('blur', () => {
         if (isCustomQuiz && !customSubmitted && quizData) {
+            onSubmitCustomQuiz("proctor");
+        }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement && isCustomQuiz && !customSubmitted && quizData) {
             onSubmitCustomQuiz("proctor");
         }
     });

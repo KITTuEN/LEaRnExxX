@@ -1759,7 +1759,8 @@ def fetch_custom_quiz(code):
         "video_url": quiz.get("video_url"),
         "num_questions": quiz.get("num_questions"),
         "difficulty": quiz.get("difficulty"),
-        "quiz_data": quiz.get("quiz_data", {})
+        "quiz_data": quiz.get("quiz_data", {}),
+        "active": quiz.get("active", True)
     }
     return jsonify(response)
 
@@ -1775,8 +1776,15 @@ def submit_custom_quiz(code):
         return jsonify({"error": "Quiz code not found"}), 404
 
     # Check if quiz is active
+    # Check if quiz is active (allow owner to submit for testing)
     if not quiz.get("active", True):
-        return jsonify({"error": "This quiz is not currently accepting attempts."}), 403
+        try:
+            owner_id = ObjectId(current_user.id)
+        except Exception:
+            owner_id = current_user.id
+        
+        if quiz["owner_id"] != owner_id and str(quiz["owner_id"]) != str(owner_id):
+            return jsonify({"error": "This quiz is not currently accepting attempts."}), 403
 
     data = request.get_json()
     user_answers = data.get("user_answers", {})
@@ -1929,55 +1937,6 @@ def delete_custom_quiz_attempt(code, attempt_id):
 
     return jsonify({"success": True})
 
-@app.route("/api/custom-quizzes/<code>/toggle-active", methods=["POST"])
-@login_required
-def toggle_custom_quiz_active(code):
-    """Toggle active flag for a custom quiz (owner only)."""
-    if not MONGODB_AVAILABLE:
-        return jsonify({"error": "Database unavailable"}), 500
-
-    quiz = custom_quizzes_collection.find_one({"code": code.upper()})
-    if not quiz:
-        return jsonify({"error": "Quiz code not found"}), 404
-
-    try:
-        owner_id = ObjectId(current_user.id)
-    except Exception:
-        owner_id = current_user.id
-
-    if quiz["owner_id"] != owner_id and str(quiz["owner_id"]) != str(owner_id):
-        return jsonify({"error": "Not authorized to modify this quiz"}), 403
-    data = request.get_json()
-    user_message = data.get("message", "")
-    if not user_message:
-        return jsonify({"error": "No message provided"}), 400
-    try:
-        answer = ask_gemini(user_message)
-        
-        # Store conversation in MongoDB
-        if MONGODB_AVAILABLE:
-            try:
-                # Store user_id as ObjectId for consistency
-                try:
-                    user_id_obj = ObjectId(current_user.id)
-                except:
-                    user_id_obj = current_user.id
-                
-                conversation = {
-                    "user_id": user_id_obj,
-                    "username": current_user.username,
-                    "user_message": user_message,
-                    "bot_response": answer,
-                    "timestamp": datetime.utcnow()
-                }
-                result = chat_conversations_collection.insert_one(conversation)
-                print(f"Stored conversation for user {current_user.id}, inserted_id: {result.inserted_id}")
-            except Exception as e:
-                print(f"Error storing conversation: {str(e)}")
-        
-        return jsonify({"response": answer})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 def _api_videoquiz_logic():
     data = request.get_json()
